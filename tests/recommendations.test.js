@@ -32,14 +32,22 @@ assert.deepEqual(Object.keys(vector), [
 assert.equal(vector.evening, 4, '0~1 time ratios should normalize to 0~5');
 assert.ok(Object.values(vector).every(Number.isFinite), 'every vector value should be finite');
 
+assert.equal(vm.runInContext('QUESTIONS.length', context), 12, 'quiz should contain 12 questions');
+assert.equal(vm.runInContext("QUESTIONS[10].a[0][0]", context), '상관없음', 'main-game question should start with no preference');
+
 const results = vm.runInContext(`
   streamers = __streamers;
-  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1] };
+  relationshipGraph = buildRelationshipGraph(streamers);
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 1] };
   recommendations();
 `, context);
 assert.equal(results.length, 5);
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
-assert.ok(results.every((item, index) => index === 0 || results[index - 1].score >= item.score));
+assert.ok(results.slice(1).every(item => item.winnerRelationDepth >= 1 && item.winnerRelationDepth <= 3), 'next picks should prioritize the winner relationship graph');
+
+const neighborhood = vm.runInContext("relationshipNeighborhood('한동숙', 3)", context);
+assert.ok(neighborhood.size > 0);
+assert.ok([...neighborhood.values()].every(item => item.depth <= 3));
 
 const filteredResults = vm.runInContext(`
   state.includeVtuber = false;
