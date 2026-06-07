@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#090d0c">
+  <meta name="description" content="10개의 질문으로 알아보는 나와 찰떡인 인터넷방송 스트리머">
+  <title>인터넷방송 성향 테스트</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <main class="studio-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="처음으로"><span class="brand-mark">▶</span><span>STREAM<span class="accent">MATCH</span></span></a>
+      <div class="top-status"><span class="live-dot"></span> 취향 분석 방송 중 <span id="viewer-count">1,284</span>명 시청</div>
+    </header>
+
+    <section class="broadcast-layout">
+      <div class="player-wrap">
+        <div class="player-chrome">
+          <span class="live-badge">LIVE</span>
+          <span id="scene-label">성향 분석 대기실</span>
+          <span class="quality">1080p · 취향 최적화</span>
+        </div>
+        <div id="app" class="app-stage" aria-live="polite"></div>
+        <div class="player-footer">
+          <div><span class="control-icon">▶</span><span class="control-icon">⌁</span><span class="volume"></span></div>
+          <div class="player-meta">#인터넷방송 #스트리머추천 #취향테스트</div>
+          <div>⚙ ⛶</div>
+        </div>
+      </div>
+
+      <aside class="chat-panel" aria-label="가상 채팅창">
+        <div class="chat-head"><strong>채팅</strong><span>● LIVE</span></div>
+        <div id="chat-log" class="chat-log"></div>
+        <div class="chat-input"><span>로그인 후 채팅할 수 있어요</span><button type="button" tabindex="-1">전송</button></div>
+      </aside>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="assertive"></div>
+  <script src="src/main.js" defer></script>
+</body>
+</html>
