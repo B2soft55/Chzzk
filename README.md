@@ -63,3 +63,11 @@ python3 -m http.server 8000
 │   └── streamers.json
 └── README.md
 ```
+
+## 테스트
+
+추천 벡터 변환과 실제 데이터 기반 추천 계산 회귀 테스트를 실행합니다.
+
+```bash
+node tests/recommendations.test.js
+```

@@ -116,7 +116,13 @@ function buildUserVector(){
   return {vector:Object.fromEntries(AXES.map(k=>[k,counts[k]?totals[k]/counts[k]:2.5])),favoriteWeight};
 }
 /** 데이터의 시간대 비율(0~1)과 일반 지표(0~5)를 동일 범위로 정규화합니다. */
-function streamerVector(s){return Object.fromEntries(AXES.map(k=>{const raw=num(s?.[FIELD_MAP[k]]);return ['daytime','evening','latenight'].includes(k)&&raw<=1?raw*5:raw;}));}
+function streamerVector(s){
+  return Object.fromEntries(AXES.map(k=>{
+    const raw=num(s?.[FIELD_MAP[k]]);
+    const normalized=['daytime','evening','latenight'].includes(k)&&raw<=1?raw*5:raw;
+    return [k,normalized];
+  }));
+}
 function cosine(a,b){let dot=0,aa=0,bb=0;AXES.forEach(k=>{dot+=a[k]*b[k];aa+=a[k]**2;bb+=b[k]**2;});return aa&&bb?dot/(Math.sqrt(aa)*Math.sqrt(bb)):0;}
 function distanceScore(a,b){const d=Math.sqrt(AXES.reduce((sum,k)=>sum+(a[k]-b[k])**2,0)/AXES.length);return Math.max(0,1-d/5);}
 function similarity(a,b){return cosine(a,b)*.45+distanceScore(a,b)*.55;}
