@@ -5,6 +5,8 @@ const FIELD_MAP = {spicy:'매운맛',energy:'텐션',chat:'채팅속도',daytime
 const OFFICIAL_WORDS = ['공식','뉴스','live','중계','치지직','jtbc','spotv','lck','pubg','발로란트'];
 const INCLUDE_DULLAHAN_WHEN_EXCLUDING_VTUBERS = true; // TODO: 듀라한도 제외하려면 false로 변경하세요.
 const SAVE_KEY = 'stream-match-state-v2';
+const RELATION_MAX_DEPTH = 2;
+const RELATION_BONUS_BY_DEPTH = {1:.32,2:.06};
 
 // TODO: 문항을 추가하거나 선택지별 축 점수를 조정할 때 이 배열을 수정하세요. 점수 범위는 0~5입니다.
 const QUESTIONS = [
@@ -142,22 +144,24 @@ function buildRelationshipGraph(items){
     graph.get(from).set(to,Math.max(graph.get(from).get(to)||0,closeness));graph.get(to).set(from,Math.max(graph.get(to).get(from)||0,closeness));
   }));return graph;
 }
-/** 시작 스트리머에서 최대 3개 관계 노드까지 이어지는 경로 중 가장 강한 밀접도를 반환합니다. */
-function relationshipNeighborhood(source,maxDepth=3){
-  const found=new Map(),queue=[{name:source,depth:0,closeness:1}];
-  while(queue.length){const current=queue.shift();if(current.depth>=maxDepth)continue;(relationshipGraph.get(current.name)||new Map()).forEach((edge,to)=>{const next={name:to,depth:current.depth+1,closeness:current.closeness*edge};const previous=found.get(to);if(!previous||next.closeness>previous.closeness){found.set(to,next);queue.push(next);}});}
+/** 시작 스트리머에서 최대 2개 관계 노드까지 이어지는 경로 중 가장 강한 밀접도를 반환합니다. */
+function relationshipNeighborhood(source,maxDepth=RELATION_MAX_DEPTH){
+  const depthLimit=Math.min(RELATION_MAX_DEPTH,Math.max(0,maxDepth)),found=new Map(),queue=[{name:source,depth:0,closeness:1}];
+  while(queue.length){const current=queue.shift();if(current.depth>=depthLimit)continue;(relationshipGraph.get(current.name)||new Map()).forEach((edge,to)=>{const next={name:to,depth:current.depth+1,closeness:current.closeness*edge};const previous=found.get(to);if(!previous||next.depth<previous.depth||(next.depth===previous.depth&&next.closeness>previous.closeness)){found.set(to,next);queue.push(next);}});}
   found.delete(source);return found;
 }
 function gamePreferenceScore(s,keywords){if(!keywords.length)return null;const category=String(s?.['주력/종합게임']||'').toLowerCase();return keywords.some(keyword=>category.includes(keyword.toLowerCase()))?1:.35;}
+/** 성향 점수가 비슷할 때 1단계 관계를 강하게, 2단계 관계를 약하게 우선합니다. */
+function relationshipRankScore(score,relation){return score+(relation?.closeness||0)*(RELATION_BONUS_BY_DEPTH[relation?.depth]||0);}
 
-/** 취향·주력 게임·최애 관계도를 반영하고, 1위 주변의 3홉 관계 스트리머를 추가 추천에서 우선합니다. */
+/** 취향·주력 게임·최애 관계도를 반영하고, 1위 주변의 2단계 관계 스트리머를 깊이별로 우선합니다. */
 function recommendations(){
   const {vector,favoriteWeight,gameKeywords}=buildUserVector(), favorite=streamers.find(s=>nameOf(s)===state.favorite), favVector=favorite?streamerVector(favorite):null;
   let pool=candidates();if(!pool.length)pool=streamers.filter(s=>nameOf(s)!==state.favorite&&!isOfficial(s));if(!pool.length)pool=streamers.filter(s=>nameOf(s)!==state.favorite);
-  const fw=favVector?favoriteWeight:0,favoriteRelations=fw?relationshipNeighborhood(nameOf(favorite),3):new Map();
-  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.88+game*.12,fav=favVector?similarity(favVector,streamerVector(s)):0;let score=taste*(1-fw)+fav*fw;const relation=favoriteRelations.get(nameOf(s));if(relation)score=score*.78+relation.closeness*.22;return {s,score,relationDepth:relation?.depth||null};}).sort((a,b)=>b.score-a.score);
-  if(!scored.length)return [];const winner=scored[0],winnerRelations=relationshipNeighborhood(nameOf(winner.s),3);
-  const next=scored.slice(1).map(item=>{const relation=winnerRelations.get(nameOf(item.s));return {...item,winnerRelationDepth:relation?.depth||null,nextScore:item.score*.78+(relation?.closeness||0)*.22};}).sort((a,b)=>Boolean(b.winnerRelationDepth)-Boolean(a.winnerRelationDepth)||b.nextScore-a.nextScore);
+  const fw=favVector?favoriteWeight:0,favoriteRelations=fw?relationshipNeighborhood(nameOf(favorite)):new Map();
+  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.88+game*.12,fav=favVector?similarity(favVector,streamerVector(s)):0;const score=taste*(1-fw)+fav*fw,relation=favoriteRelations.get(nameOf(s));return {s,score,rankScore:relationshipRankScore(score,relation),relationDepth:relation?.depth||null};}).sort((a,b)=>b.rankScore-a.rankScore);
+  if(!scored.length)return [];const winner=scored[0],winnerRelations=relationshipNeighborhood(nameOf(winner.s));
+  const next=scored.slice(1).map(item=>{const relation=winnerRelations.get(nameOf(item.s));return {...item,winnerRelationDepth:relation?.depth||null,nextScore:relationshipRankScore(item.rankScore,relation)};}).sort((a,b)=>b.nextScore-a.nextScore);
   return [winner,...next.slice(0,4)];
 }
 function typeName(v){const sorted=[['매운맛',v.spicy],['하이텐션',v.energy],['채팅 폭주',v.chat],['낮방 출석',v.daytime],['황금시간',v.evening],['밤샘',v.latenight],['과몰입 덕후',v.otaku],['합방 축제',v.collab],['실력충',v.skill]].sort((a,b)=>b[1]-a[1]);return `${sorted[0][0]} ${sorted[1][0]} 중독형`;}

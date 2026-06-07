@@ -43,13 +43,29 @@ const results = vm.runInContext(`
 `, context);
 assert.equal(results.length, 5);
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
-assert.ok(results.slice(1).every(item => item.winnerRelationDepth >= 1 && item.winnerRelationDepth <= 3), 'next picks should prioritize the winner relationship graph');
+assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2), 'next picks must not use relationships beyond depth two');
+assert.ok(results.slice(1).filter(item => item.winnerRelationDepth === 1).length >= 3, 'similar next picks should usually come from direct relationships');
 
 const neighborhood = vm.runInContext("relationshipNeighborhood('한동숙', 3)", context);
 assert.ok(neighborhood.size > 0);
-assert.ok([...neighborhood.values()].every(item => item.depth <= 3));
+assert.ok([...neighborhood.values()].every(item => item.depth <= 2), 'even an explicit larger depth must be capped at two');
+const directRelationship = vm.runInContext(`
+  relationshipGraph = new Map([
+    ['A', new Map([['B', .6], ['C', .99]])],
+    ['B', new Map([['A', .6], ['C', .99]])],
+    ['C', new Map([['A', .99], ['B', .99]])],
+  ]);
+  relationshipNeighborhood('A').get('B');
+`, context);
+assert.equal(directRelationship.depth, 1, 'a stronger indirect path must not replace a direct relationship');
+assert.ok(
+  vm.runInContext("relationshipRankScore(.8, { depth: 1, closeness: .7 }) > relationshipRankScore(.9, { depth: 2, closeness: .7 })", context),
+  'a similar depth-one candidate should outrank a slightly stronger depth-two candidate',
+);
+assert.equal(vm.runInContext("relationshipRankScore(.8, { depth: 3, closeness: 1 })", context), .8, 'depth-three relationships must add no ranking bonus');
 
 const filteredResults = vm.runInContext(`
+  relationshipGraph = buildRelationshipGraph(streamers);
   state.includeVtuber = false;
   recommendations();
 `, context);
