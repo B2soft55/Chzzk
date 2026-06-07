@@ -28,7 +28,7 @@ const runRecommendations = (answers, options = {}) => {
     recommendations();
   `, context);
 };
-const baseAnswers = [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3, 0, 0];
+const baseAnswers = [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 0, 0, 3];
 
 const normalized = vm.runInContext('__streamers', context);
 const axisFields = ['매운맛', '텐션', '채팅속도', '낮비중', '저녁비중', '새벽비중', '덕후지수', '합방비중', '실력지수'];
@@ -62,7 +62,8 @@ assert.ok(Object.values(vector).every(Number.isFinite), 'every vector value shou
 assert.equal(vm.runInContext('QUESTIONS.length', context), 14, 'quiz should contain 14 questions');
 assert.equal(vm.runInContext("QUESTIONS[10].a[0][0]", context), '상관없음', 'main-content question should start with no preference');
 assert.ok(vm.runInContext('QUESTIONS[10].a.length >= 8', context), 'main-content question should offer at least eight choices');
-assert.ok(vm.runInContext("QUESTIONS[11].a.some(([,meta]) => Number.isFinite(meta.exploreWeight) || Number.isFinite(meta.longtailWeight))", context), 'last question should include diversity weights');
+assert.equal(vm.runInContext('QUESTIONS[13].q', context), '추천 결과를 어떻게 구성할까요?', 'matching strategy should be the last question');
+assert.ok(vm.runInContext("QUESTIONS[13].a.some(([,meta]) => Number.isFinite(meta.exploreWeight) || Number.isFinite(meta.longtailWeight))", context), 'last question should include diversity weights');
 assert.ok(vm.runInContext("state={answers:[0],favorite:'',includeVtuber:true}; const p=buildUserVector(); Number.isFinite(p.favoriteWeight)&&Number.isFinite(p.relationWeight)&&Number.isFinite(p.exploreWeight)&&Number.isFinite(p.longtailWeight)", context), 'missing new weights should fall back safely');
 assert.equal(vm.runInContext("typeof capturedResultBlob", context), 'function');
 assert.equal(vm.runInContext("typeof fallbackResultCanvas", context), 'function');
@@ -92,15 +93,15 @@ assert.ok(vm.runInContext("isOfficial({ 정제된이름: '개인방송', 공식�
 
 const sameResults = runRecommendations(baseAnswers).map(item => item.s.정제된이름);
 assert.deepEqual(runRecommendations(baseAnswers).map(item => item.s.정제된이름), sameResults, 'the same state should be reproducible');
-const alternateResults = runRecommendations([1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 8, 3, 0, 0]);
+const alternateResults = runRecommendations([1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 8, 0, 0, 3]);
 assert.notEqual(alternateResults[4].s.정제된이름, results[4].s.정제된이름, 'a different answer signature can rotate the discovery slot');
 
-const talkStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3, 1, 2]);
-const skillStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3, 3, 5]);
+const talkStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 1, 2, 3]);
+const skillStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3, 5, 3]);
 assert.notDeepEqual(talkStyleResults.map(item => item.s.정제된이름), skillStyleResults.map(item => item.s.정제된이름), 'new style choices should diversify recommendation results');
 assert.ok(talkStyleResults.some(item => item.s.콘텐츠태그.includes('토크') || item.s.추천풀.includes('talk')), 'talk-style choices should surface matching data tags or pools');
 assert.ok(skillStyleResults.some(item => item.s.콘텐츠태그.includes('실력') || item.s.추천풀.includes('skill')), 'skill-style choices should surface matching data tags or pools');
-assert.ok(vm.runInContext("state={answers:[0,0,0,0,0,0,0,0,0,0,0,0,1,2],favorite:'',includeVtuber:true}; buildUserVector().preferenceKeywords.includes('토크') && buildUserVector().preferenceKeywords.includes('hidden_gem')", context), 'both new questions should merge their preference keywords');
+assert.ok(vm.runInContext("state={answers:[0,0,0,0,0,0,0,0,0,0,0,1,2,0],favorite:'',includeVtuber:true}; buildUserVector().preferenceKeywords.includes('토크') && buildUserVector().preferenceKeywords.includes('hidden_gem')", context), 'both new questions should merge their preference keywords');
 
 assert.ok(vm.runInContext("gamePreferenceScore({ '주력/종합게임': '', 콘텐츠태그: ['힐링 토크'] }, ['힐링']) === 1 && gamePreferenceScore({ content_tags: ['발로란트'] }, ['발로란트']) === 1", context), 'Korean and graph content tags should affect content matching');
 const emptyRelationDiscovery = vm.runInContext("state={answers:[0],favorite:'',includeVtuber:true}; discoveryPick([{s:{정제된이름:'관계없음',연결관계:[],규모티어:'longtail'},score:.8}],new Set(),.85,{exploreWeight:.5,longtailWeight:.5})", context);
