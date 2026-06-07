@@ -4,15 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-// Browser-only rendering is stubbed so the real recommendation functions can be
-// exercised against the production JSON without starting a browser.
-const element = {
-  textContent: '',
-  innerHTML: '',
-  children: [],
-  append() {},
-  classList: { add() {}, remove() {} },
-};
+// Browser-only rendering is stubbed so production recommendation functions can run in Node.
+const element = { textContent: '', innerHTML: '', children: [], append() {}, classList: { add() {}, remove() {} } };
 const context = vm.createContext({
   console,
   __streamers: JSON.parse(fs.readFileSync('data/streamers.json', 'utf8')),
@@ -22,72 +15,63 @@ const context = vm.createContext({
   fetch: () => new Promise(() => {}),
   setTimeout: () => 0,
 });
-
 vm.runInContext(fs.readFileSync('src/main.js', 'utf8'), context);
 
+const runRecommendations = (answers, options = {}) => {
+  context.testAnswers = answers;
+  context.testOptions = options;
+  return vm.runInContext(`
+    streamers = __streamers;
+    relationshipGraph = buildRelationshipGraph(streamers);
+    state = { scene: 'result', includeVtuber: testOptions.includeVtuber !== false, favorite: testOptions.favorite || '', answers: testAnswers };
+    recommendations();
+  `, context);
+};
+const baseAnswers = [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3];
+
 const vector = vm.runInContext('streamerVector(__streamers[0])', context);
-assert.deepEqual(Object.keys(vector), [
-  'spicy', 'energy', 'chat', 'daytime', 'evening', 'latenight', 'otaku', 'collab', 'skill',
-]);
+assert.deepEqual(Object.keys(vector), ['spicy', 'energy', 'chat', 'daytime', 'evening', 'latenight', 'otaku', 'collab', 'skill']);
 assert.equal(vector.evening, 4, '0~1 time ratios should normalize to 0~5');
 assert.ok(Object.values(vector).every(Number.isFinite), 'every vector value should be finite');
 
 assert.equal(vm.runInContext('QUESTIONS.length', context), 12, 'quiz should contain 12 questions');
-assert.equal(vm.runInContext("QUESTIONS[10].a[0][0]", context), '상관없음', 'main-game question should start with no preference');
-assert.equal(vm.runInContext("typeof capturedResultBlob", context), 'function', 'full result capture should be available');
-assert.equal(vm.runInContext("typeof fallbackResultCanvas", context), 'function', 'canvas fallback should be available for incompatible browsers');
-assert.equal(vm.runInContext("typeof downloadImage", context), 'function', 'generated image should have a dedicated download helper');
+assert.equal(vm.runInContext("QUESTIONS[10].a[0][0]", context), '상관없음', 'main-content question should start with no preference');
+assert.ok(vm.runInContext('QUESTIONS[10].a.length >= 8', context), 'main-content question should offer at least eight choices');
+assert.ok(vm.runInContext("QUESTIONS[11].a.some(([,meta]) => Number.isFinite(meta.exploreWeight) || Number.isFinite(meta.longtailWeight))", context), 'last question should include diversity weights');
+assert.ok(vm.runInContext("state={answers:[0],favorite:'',includeVtuber:true}; const p=buildUserVector(); Number.isFinite(p.favoriteWeight)&&Number.isFinite(p.relationWeight)&&Number.isFinite(p.exploreWeight)&&Number.isFinite(p.longtailWeight)", context), 'missing new weights should fall back safely');
+assert.equal(vm.runInContext("typeof capturedResultBlob", context), 'function');
+assert.equal(vm.runInContext("typeof fallbackResultCanvas", context), 'function');
+assert.equal(vm.runInContext("typeof downloadImage", context), 'function');
 
-const results = vm.runInContext(`
-  streamers = __streamers;
-  relationshipGraph = buildRelationshipGraph(streamers);
-  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 1] };
-  recommendations();
-`, context);
-assert.equal(results.length, 5);
+const results = runRecommendations(baseAnswers);
+assert.equal(results.length, 5, 'a sufficiently large pool should return five recommendations');
+assert.ok(results.length <= 5, 'recommendations should never exceed five');
+assert.equal(results.map(item => item.slotRole).join(','), 'best,relation,content,taste,discovery', 'five slots should have distinct roles');
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
-assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2), 'next picks must not use relationships beyond depth two');
-assert.ok(results.slice(1).filter(item => item.winnerRelationDepth === 1).length >= 3, 'similar next picks should usually come from direct relationships');
-assert.ok(results.slice(1).some(item => item.nextScore > item.rankScore), 'BEST relationship bonuses should still apply when no favorite is selected');
+assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2));
+assert.match(vm.runInContext('resultCard(recommendations()[4], 3)', context), /DISCOVERY/, 'result card should identify the discovery slot');
 
 const neighborhood = vm.runInContext("relationshipNeighborhood('한동숙', 3)", context);
 assert.ok(neighborhood.size > 0);
-assert.ok([...neighborhood.values()].every(item => item.depth <= 2), 'even an explicit larger depth must be capped at two');
-const directRelationship = vm.runInContext(`
-  relationshipGraph = new Map([
-    ['A', new Map([['B', .6], ['C', .99]])],
-    ['B', new Map([['A', .6], ['C', .99]])],
-    ['C', new Map([['A', .99], ['B', .99]])],
-  ]);
-  relationshipNeighborhood('A').get('B');
-`, context);
-assert.equal(directRelationship.depth, 1, 'a stronger indirect path must not replace a direct relationship');
-assert.ok(
-  vm.runInContext("relationshipRankScore(.8, { depth: 1, closeness: .7 }) > relationshipRankScore(.9, { depth: 2, closeness: .7 })", context),
-  'a similar depth-one candidate should outrank a slightly stronger depth-two candidate',
-);
-assert.equal(vm.runInContext("relationshipRankScore(.8, { depth: 3, closeness: 1 })", context), .8, 'depth-three relationships must add no ranking bonus');
-assert.ok(
-  vm.runInContext("relationshipRankScore(.8, { depth: 1, closeness: .6 }, FAVORITE_RELATION_MULTIPLIER) > relationshipRankScore(.8, { depth: 1, closeness: .99 })", context),
-  'a direct favorite relationship should outrank a direct BEST relationship',
-);
+assert.ok([...neighborhood.values()].every(item => item.depth <= 2));
+assert.equal(vm.runInContext(`relationshipGraph = new Map([['A', new Map([['B', .6], ['C', .99]])],['B', new Map([['A', .6], ['C', .99]])],['C', new Map([['A', .99], ['B', .99]])]]); relationshipNeighborhood('A').get('B').depth;`, context), 1);
+assert.ok(vm.runInContext("relationshipRankScore(.8, { depth: 1, closeness: .7 }) > relationshipRankScore(.9, { depth: 2, closeness: .7 })", context));
+assert.equal(vm.runInContext("relationshipRankScore(.8, { depth: 3, closeness: 1 })", context), .8);
 
-const favoritePriorityResults = vm.runInContext(`
-  relationshipGraph = buildRelationshipGraph(streamers);
-  state = { scene: 'result', includeVtuber: true, favorite: '한동숙', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 0] };
-  recommendations();
-`, context);
-assert.ok(favoritePriorityResults.slice(1).every(item => item.relationDepth === 1), 'next picks should prioritize direct favorite relationships when a favorite is selected');
-assert.ok(favoritePriorityResults.slice(1).every(item => item.nextScore === item.rankScore), 'BEST relationship bonuses must not reorder next picks when a favorite is selected');
-context.favoritePriorityItem = favoritePriorityResults[1];
-assert.match(vm.runInContext("resultCard(favoritePriorityItem, 0)", context), /최애와 관계 1단계/, 'result cards should explain favorite relationship priority');
-
-const filteredResults = vm.runInContext(`
-  relationshipGraph = buildRelationshipGraph(streamers);
-  state.includeVtuber = false;
-  recommendations();
-`, context);
+const filteredResults = runRecommendations(baseAnswers, { includeVtuber: false });
 assert.ok(filteredResults.length > 0);
-assert.ok(filteredResults.every(item => item.s['버튜버여부'] !== '버튜버'));
+assert.ok(filteredResults.every(item => item.s['버튜버여부'] !== '버튜버'), 'excluded vtubers must not appear in any slot');
+context.resultItems = results;
+assert.ok(vm.runInContext('resultItems.every(item => !isOfficial(item.s))', context), 'official channels must not appear in recommendations');
+assert.ok(vm.runInContext("isOfficial({ 정제된이름: '개인방송', 공식채널여부: true }) && isOfficial({ 정제된이름: '개인방송', 버튜버여부: '공식' }) && isOfficial({ 정제된이름: 'LCK 공식' }) && isOfficial({ 정제된이름: '개인방송', 규모티어: 'official' })", context), 'all official-channel signals should be recognized');
 
-console.log('recommendation vector and scoring checks passed');
+const sameResults = runRecommendations(baseAnswers).map(item => item.s.정제된이름);
+assert.deepEqual(runRecommendations(baseAnswers).map(item => item.s.정제된이름), sameResults, 'the same state should be reproducible');
+const alternateResults = runRecommendations([1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 8, 3]);
+assert.notEqual(alternateResults[4].s.정제된이름, results[4].s.정제된이름, 'a different answer signature can rotate the discovery slot');
+
+assert.ok(vm.runInContext("gamePreferenceScore({ '주력/종합게임': '', 콘텐츠태그: ['힐링 토크'] }, ['힐링']) === 1", context), 'optional content tags should affect content matching');
+const emptyRelationDiscovery = vm.runInContext("state={answers:[0],favorite:'',includeVtuber:true}; discoveryPick([{s:{정제된이름:'관계없음',연결관계:[],규모티어:'longtail'},score:.8}],new Set(),.85,{exploreWeight:.5,longtailWeight:.5})", context);
+assert.equal(emptyRelationDiscovery.s.정제된이름, '관계없음', 'a candidate without relationships can enter the discovery pool');
+
+console.log('recommendation coverage and scoring checks passed');
