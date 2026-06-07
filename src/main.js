@@ -8,6 +8,9 @@ const SAVE_KEY = 'stream-match-state-v2';
 const RELATION_MAX_DEPTH = 2;
 const RELATION_BONUS_BY_DEPTH = {1:.32,2:.06};
 const FAVORITE_RELATION_MULTIPLIER = 2;
+const SIMILAR_TAG_RELATION_BONUS = .045;
+const DISCOVERY_MIN_SCORE = .58;
+const DEFAULT_RECOMMENDATION_WEIGHTS = {favoriteWeight:.3,relationWeight:.2,exploreWeight:.15,longtailWeight:.1};
 
 // TODO: 문항을 추가하거나 선택지별 축 점수를 조정할 때 이 배열을 수정하세요. 점수 범위는 0~5입니다.
 const QUESTIONS = [
@@ -21,8 +24,8 @@ const QUESTIONS = [
   {q:'나는 이런 팬덤 분위기가 좋다', a:[['밈으로 하나 되는 분위기',{chat:5,spicy:3}],['훈훈하고 편한 분위기',{chat:2,spicy:0}],['덕질과 과몰입, 오히려 좋아',{otaku:5}],['대회·합방 때 단체 응원',{collab:5,skill:3}]]},
   {q:'방송을 켜놓는 방식은?', a:[['본방은 무조건 집중해서 본다',{skill:4,chat:3}],['게임하면서 옆에 오래 틀어둔다',{energy:1.5,chat:2}],['자기 전 새벽에 정주행',{latenight:5,energy:1}],['클립 보고 본방까지 따라간다',{energy:4,chat:4}]]},
   {q:'오래 보게 되는 콘텐츠 스타일은?', a:[['한 게임을 깊게 파는 장인 방송',{skill:5,energy:2}],['매일 새로운 걸 만나는 종합 게임',{energy:4,otaku:3}],['사람들과 만드는 대형 합방·서버',{collab:5,chat:4}],['게임보다 토크와 소통이 중심',{chat:5,spicy:3}]]},
-  {q:'추천 스트리머의 주력 게임은 뭐였으면 좋겠어요?', a:[['상관없음',{gameKeywords:[]}],['종합 게임 · 스토리 게임',{gameKeywords:['종합 게임','종겜','콘솔','인디']}],['LoL · TFT · AOS',{gameKeywords:['lol','tft','리그 오브 레전드','aos']}],['마인크래프트 · 대형 서버',{gameKeywords:['마인크래프트','서버']}],['FPS · 오버워치 · 발로란트',{gameKeywords:['fps','오버워치','발로란트','배틀그라운드']}],['서브컬처 게임',{gameKeywords:['서브컬처']}]]},
-  {q:'이번에 추천받고 싶은 스트리머는?', a:[['내 최애랑 결이 비슷한 사람',{favoriteWeight:.45}],['최애와 다르지만 취향은 맞는 사람',{favoriteWeight:.15}],['완전히 새로운 장르 개척',{favoriteWeight:0}],['요즘 핫한 방송 분위기',{chat:5,energy:5,favoriteWeight:.1}]]}
+  {q:'추천 스트리머의 주력 콘텐츠는?', a:[['상관없음',{gameKeywords:[]}],['종합 게임 · 스토리',{gameKeywords:['종합 게임','종겜','스토리','콘솔','인디']}],['LoL · TFT · AOS',{gameKeywords:['lol','tft','리그 오브 레전드','aos']}],['마크 · 대형 서버',{gameKeywords:['마인크래프트','마크','서버']}],['FPS · 오버워치 · 발로',{gameKeywords:['fps','오버워치','발로란트','배틀그라운드']}],['서브컬처 · 버튜버',{gameKeywords:['서브컬처','버튜버','오타쿠']}],['스포츠 · 격투 · 레이싱',{gameKeywords:['스포츠','축구','야구','격투','레이싱']}],['라디오 · 토크 · 힐링',{gameKeywords:['라디오','토크','소통','힐링']}],['대회 · e스포츠 · 분석',{gameKeywords:['대회','e스포츠','이스포츠','분석','해설']}]]},
+  {q:'추천 결과를 어떻게 구성할까요?', a:[['가장 정확한 BEST 중심',{favoriteWeight:.3,relationWeight:.12,exploreWeight:.05,longtailWeight:.02}],['최애 관계를 우선해서',{favoriteWeight:.45,relationWeight:.45,exploreWeight:.08,longtailWeight:.03}],['취향 맞는 덜 뻔한 사람',{favoriteWeight:.18,relationWeight:.12,exploreWeight:.45,longtailWeight:.2}],['숨은 보석까지 섞어서',{favoriteWeight:.12,relationWeight:.08,exploreWeight:.55,longtailWeight:.5}]]}
 ];
 
 const CHAT_POOL = [
@@ -118,9 +121,9 @@ function renderQuiz(){
 
 /** 답변들을 축별 평균 0~5 벡터로 변환합니다. */
 function buildUserVector(){
-  const totals=Object.fromEntries(AXES.map(k=>[k,0])), counts=Object.fromEntries(AXES.map(k=>[k,0]));let favoriteWeight=.3,gameKeywords=[];
-  state.answers.forEach((answer,i)=>{const vector=QUESTIONS[i]?.a?.[answer]?.[1]||{};AXES.forEach(k=>{if(Number.isFinite(vector[k])){totals[k]+=vector[k];counts[k]++;}});if(Number.isFinite(vector.favoriteWeight))favoriteWeight=vector.favoriteWeight;if(Array.isArray(vector.gameKeywords))gameKeywords=vector.gameKeywords;});
-  return {vector:Object.fromEntries(AXES.map(k=>[k,counts[k]?totals[k]/counts[k]:2.5])),favoriteWeight,gameKeywords};
+  const totals=Object.fromEntries(AXES.map(k=>[k,0])), counts=Object.fromEntries(AXES.map(k=>[k,0])), weights={...DEFAULT_RECOMMENDATION_WEIGHTS};let gameKeywords=[];
+  state.answers.forEach((answer,i)=>{const vector=QUESTIONS[i]?.a?.[answer]?.[1]||{};AXES.forEach(k=>{if(Number.isFinite(vector[k])){totals[k]+=vector[k];counts[k]++;}});Object.keys(weights).forEach(k=>{if(Number.isFinite(vector[k]))weights[k]=vector[k];});if(Array.isArray(vector.gameKeywords))gameKeywords=vector.gameKeywords;});
+  return {vector:Object.fromEntries(AXES.map(k=>[k,counts[k]?totals[k]/counts[k]:2.5])),gameKeywords,...weights};
 }
 /** 데이터의 시간대 비율(0~1)과 일반 지표(0~5)를 동일 범위로 정규화합니다. */
 function streamerVector(s){
@@ -133,7 +136,7 @@ function streamerVector(s){
 function cosine(a,b){let dot=0,aa=0,bb=0;AXES.forEach(k=>{dot+=a[k]*b[k];aa+=a[k]**2;bb+=b[k]**2;});return aa&&bb?dot/(Math.sqrt(aa)*Math.sqrt(bb)):0;}
 function distanceScore(a,b){const d=Math.sqrt(AXES.reduce((sum,k)=>sum+(a[k]-b[k])**2,0)/AXES.length);return Math.max(0,1-d/5);}
 function similarity(a,b){return cosine(a,b)*.45+distanceScore(a,b)*.55;}
-function isOfficial(s){const n=nameOf(s).toLowerCase();return OFFICIAL_WORDS.some(word=>n.includes(word));}
+function isOfficial(s){const n=nameOf(s).toLowerCase();return s?.공식채널여부===true||s?.버튜버여부==='공식'||s?.규모티어==='official'||OFFICIAL_WORDS.some(word=>n.includes(word));}
 function candidates(){return streamers.filter(s=>!isOfficial(s)&&nameOf(s)!==state.favorite&&(state.includeVtuber||s.버튜버여부!=='버튜버')&&(state.includeVtuber||INCLUDE_DULLAHAN_WHEN_EXCLUDING_VTUBERS||s.버튜버여부!=='듀라한'));}
 
 /** 연결관계를 양방향 그래프로 정리해 JSON에 한쪽 방향만 있어도 탐색할 수 있게 합니다. */
@@ -151,18 +154,37 @@ function relationshipNeighborhood(source,maxDepth=RELATION_MAX_DEPTH){
   while(queue.length){const current=queue.shift();if(current.depth>=depthLimit)continue;(relationshipGraph.get(current.name)||new Map()).forEach((edge,to)=>{const next={name:to,depth:current.depth+1,closeness:current.closeness*edge};const previous=found.get(to);if(!previous||next.depth<previous.depth||(next.depth===previous.depth&&next.closeness>previous.closeness)){found.set(to,next);queue.push(next);}});}
   found.delete(source);return found;
 }
-function gamePreferenceScore(s,keywords){if(!keywords.length)return null;const category=String(s?.['주력/종합게임']||'').toLowerCase();return keywords.some(keyword=>category.includes(keyword.toLowerCase()))?1:.35;}
+function textTags(s){return [s?.['주력/종합게임'],...(Array.isArray(s?.콘텐츠태그)?s.콘텐츠태그:[])].map(value=>String(value||'').toLowerCase());}
+function gamePreferenceScore(s,keywords){if(!keywords.length)return null;const tags=textTags(s);return keywords.some(keyword=>tags.some(tag=>tag.includes(keyword.toLowerCase())))?1:.35;}
+function recommendationPoolBonus(s,purpose){const pools=Array.isArray(s?.추천풀)?s.추천풀.map(value=>String(value).toLowerCase()):[];return pools.some(value=>value.includes(purpose)||value.includes(purpose==='discovery'?'발굴':'콘텐츠')) ? .06 : 0;}
+function similarTagRelation(anchor,candidate){
+  if(!anchor)return 0;const target=nameOf(candidate),source=nameOf(anchor),edges=[...(Array.isArray(anchor.유사태그관계)?anchor.유사태그관계:[]),...(Array.isArray(candidate.유사태그관계)?candidate.유사태그관계:[])];
+  return edges.reduce((best,edge)=>{const edgeName=String(edge?.정제된이름||edge?.이름||'').trim();if(edgeName!==target&&edgeName!==source)return best;return Math.max(best,Math.max(0,Math.min(1,Number(edge?.밀접도)||.5)));},0);
+}
 /** 성향 점수가 비슷할 때 1단계 관계를 강하게, 2단계 관계를 약하게 우선합니다. */
 function relationshipRankScore(score,relation,multiplier=1){return score+(relation?.closeness||0)*(RELATION_BONUS_BY_DEPTH[relation?.depth]||0)*multiplier;}
+function stableHash(value){let hash=2166136261;for(let i=0;i<value.length;i++){hash^=value.charCodeAt(i);hash=Math.imul(hash,16777619);}return hash>>>0;}
+function answerSignature(){return `${state.answers.join(',')}|${state.favorite||''}|${state.includeVtuber!==false}`;}
+function firstUnused(items,selected){return items.find(item=>!selected.has(nameOf(item.s)));}
+function discoveryPick(scored,selected,bestScore,{exploreWeight,longtailWeight}){
+  const scoreFloor=Math.max(DISCOVERY_MIN_SCORE,bestScore-(.18+exploreWeight*.12)),eligible=scored.filter(item=>!selected.has(nameOf(item.s))&&item.score>=scoreFloor);if(!eligible.length)return null;
+  const ordered=eligible.map(item=>{const tier=item.s?.규모티어==='longtail'?longtailWeight*.035:0;return {...item,discoveryScore:item.score+tier+recommendationPoolBonus(item.s,'discovery')*exploreWeight};}).sort((a,b)=>b.discoveryScore-a.discoveryScore||nameOf(a.s).localeCompare(nameOf(b.s)));
+  const rotationPool=ordered.flatMap(item=>item.s?.규모티어==='longtail'&&longtailWeight>=.2?[item,item]:[item]),offset=stableHash(answerSignature())%rotationPool.length;return {...rotationPool[offset],slotRole:'discovery'};
+}
 
-/** 최애가 있으면 최애 관계를 BEST 관계보다 강하게 반영하고, 없으면 BEST 주변 관계를 우선합니다. */
+/** BEST는 정확도를 유지하고 NEXT PICK은 관계·콘텐츠·취향·발굴 슬롯으로 분리합니다. */
 function recommendations(){
-  const {vector,favoriteWeight,gameKeywords}=buildUserVector(), favorite=streamers.find(s=>nameOf(s)===state.favorite), favVector=favorite?streamerVector(favorite):null;
-  let pool=candidates();if(!pool.length)pool=streamers.filter(s=>nameOf(s)!==state.favorite&&!isOfficial(s));if(!pool.length)pool=streamers.filter(s=>nameOf(s)!==state.favorite);
+  const profile=buildUserVector(),{vector,favoriteWeight,gameKeywords,relationWeight,exploreWeight,longtailWeight}=profile,favorite=streamers.find(s=>nameOf(s)===state.favorite),favVector=favorite?streamerVector(favorite):null;
+  const pool=candidates();if(!pool.length)return [];
   const fw=favVector?favoriteWeight:0,favoriteRelations=favorite?relationshipNeighborhood(nameOf(favorite)):new Map();
-  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.88+game*.12,fav=favVector?similarity(favVector,streamerVector(s)):0;const score=taste*(1-fw)+fav*fw,relation=favoriteRelations.get(nameOf(s));return {s,score,rankScore:relationshipRankScore(score,relation,FAVORITE_RELATION_MULTIPLIER),relationDepth:relation?.depth||null};}).sort((a,b)=>b.rankScore-a.rankScore);
-  if(!scored.length)return [];const winner=scored[0],winnerRelations=relationshipNeighborhood(nameOf(winner.s));
-  const next=scored.slice(1).map(item=>{const relation=winnerRelations.get(nameOf(item.s));return {...item,winnerRelationDepth:relation?.depth||null,nextScore:favoriteRelations.size?item.rankScore:relationshipRankScore(item.rankScore,relation)};}).sort((a,b)=>b.nextScore-a.nextScore);
+  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.86+game*.14,fav=favVector?similarity(favVector,streamerVector(s)):0,relation=favoriteRelations.get(nameOf(s));const score=taste*(1-fw)+fav*fw;return {s,score,testScore:test,gameScore:game,rankScore:relationshipRankScore(score,relation,FAVORITE_RELATION_MULTIPLIER),relationDepth:relation?.depth||null};}).sort((a,b)=>b.score-a.score||nameOf(a.s).localeCompare(nameOf(b.s)));
+  if(!scored.length)return [];const winner={...scored[0],slotRole:'best'},winnerRelations=relationshipNeighborhood(nameOf(winner.s)),selected=new Set([nameOf(winner.s)]),next=[];
+  const enriched=scored.slice(1).map(item=>{const relation=winnerRelations.get(nameOf(item.s)),activeRelation=favoriteRelations.size?favoriteRelations.get(nameOf(item.s)):relation,tagBonus=similarTagRelation(favorite||winner.s,item.s)*SIMILAR_TAG_RELATION_BONUS;return {...item,winnerRelationDepth:relation?.depth||null,nextScore:relationshipRankScore(item.score,activeRelation,1+relationWeight)+tagBonus};});
+  const relationPick=firstUnused([...enriched].sort((a,b)=>b.nextScore-a.nextScore),selected);if(relationPick){next.push({...relationPick,slotRole:'relation'});selected.add(nameOf(relationPick.s));}
+  const contentPick=firstUnused([...enriched].sort((a,b)=>(b.gameScore??0)+recommendationPoolBonus(b.s,'content')-(a.gameScore??0)-recommendationPoolBonus(a.s,'content')||b.score-a.score),selected);if(contentPick){next.push({...contentPick,slotRole:'content'});selected.add(nameOf(contentPick.s));}
+  const tastePick=firstUnused(enriched,selected);if(tastePick){next.push({...tastePick,slotRole:'taste'});selected.add(nameOf(tastePick.s));}
+  const discovery=discoveryPick(enriched,selected,winner.score,{exploreWeight,longtailWeight});if(discovery){next.push(discovery);selected.add(nameOf(discovery.s));}
+  for(const item of enriched){if(next.length>=4)break;if(!selected.has(nameOf(item.s))){next.push({...item,slotRole:'fallback'});selected.add(nameOf(item.s));}}
   return [winner,...next.slice(0,4)];
 }
 function typeName(v){const sorted=[['매운맛',v.spicy],['하이텐션',v.energy],['채팅 폭주',v.chat],['낮방 출석',v.daytime],['황금시간',v.evening],['밤샘',v.latenight],['과몰입 덕후',v.otaku],['합방 축제',v.collab],['실력충',v.skill]].sort((a,b)=>b[1]-a[1]);return `${sorted[0][0]} ${sorted[1][0]} 중독형`;}
@@ -176,7 +198,7 @@ function radarSvg(v){
   const valuePoints=axes.map((x,i)=>point(i,x[1]/5).join(',')).join(' ');
   return `<svg class="radar" viewBox="0 0 320 300" role="img" aria-label="취향 레이더 차트">${rings.map(p=>`<polygon points="${p}" fill="none" stroke="#33413b" stroke-width="1"/>`).join('')}${axes.map((x,i)=>{const p=point(i,1.25);return `<line x1="${cx}" y1="${cy}" x2="${point(i)[0]}" y2="${point(i)[1]}" stroke="#29352f"/><text x="${p[0]}" y="${p[1]}" fill="#9baba3" font-size="10" text-anchor="middle" dominant-baseline="middle">${x[0]}</text>`}).join('')}<polygon points="${valuePoints}" fill="rgba(0,255,163,.20)" stroke="#00ffa3" stroke-width="2"/>${axes.map((x,i)=>{const p=point(i,x[1]/5);return `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="#00ffa3"/>`}).join('')}</svg>`;
 }
-function resultCard(item,i){const s=item.s,pct=Math.round(item.score*100),relation=state.favorite&&item.relationDepth?`<span class="tag relation-tag">최애와 관계 ${item.relationDepth}단계</span>`:item.winnerRelationDepth?`<span class="tag relation-tag">BEST와 관계 ${item.winnerRelationDepth}단계</span>`:'';return `<article class="recommend-card"><span class="recommend-rank">0${i+2} · NEXT PICK</span><h3 class="recommend-name">${esc(nameOf(s))}</h3><div class="tags"><span class="tag">${esc(s.버튜버여부||'스트리머')}</span><span class="tag">${esc(s['주력/종합게임']||'종합 방송')}</span>${relation}</div><p class="recommend-feature">${esc(s.특징||'당신의 취향과 잘 맞는 스트리머')}</p><span class="match-percent">MATCH ${pct}%</span></article>`;}
+function resultCard(item,i){const s=item.s,pct=Math.round(item.score*100),relation=state.favorite&&item.relationDepth?`<span class="tag relation-tag">최애와 관계 ${item.relationDepth}단계</span>`:item.winnerRelationDepth?`<span class="tag relation-tag">BEST와 관계 ${item.winnerRelationDepth}단계</span>`:'',role={relation:'RELATION',content:'CONTENT',taste:'TASTE',discovery:'DISCOVERY'}[item.slotRole]||'NEXT PICK';return `<article class="recommend-card"><span class="recommend-rank">0${i+2} · ${role}</span><h3 class="recommend-name">${esc(nameOf(s))}</h3><div class="tags"><span class="tag">${esc(s.버튜버여부||'스트리머')}</span><span class="tag">${esc(s['주력/종합게임']||'종합 방송')}</span>${relation}</div><p class="recommend-feature">${esc(s.특징||'당신의 취향과 잘 맞는 스트리머')}</p><span class="match-percent">MATCH ${pct}%</span></article>`;}
 
 /** 계산된 스타일을 복제해 외부 라이브러리 없이 결과 영역을 PNG로 저장합니다. */
 function inlineComputedStyles(source,clone){
