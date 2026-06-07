@@ -7,6 +7,7 @@ const INCLUDE_DULLAHAN_WHEN_EXCLUDING_VTUBERS = true; // TODO: 듀라한도 제�
 const SAVE_KEY = 'stream-match-state-v2';
 const RELATION_MAX_DEPTH = 2;
 const RELATION_BONUS_BY_DEPTH = {1:.32,2:.06};
+const FAVORITE_RELATION_MULTIPLIER = 2;
 
 // TODO: 문항을 추가하거나 선택지별 축 점수를 조정할 때 이 배열을 수정하세요. 점수 범위는 0~5입니다.
 const QUESTIONS = [
@@ -152,14 +153,14 @@ function relationshipNeighborhood(source,maxDepth=RELATION_MAX_DEPTH){
 }
 function gamePreferenceScore(s,keywords){if(!keywords.length)return null;const category=String(s?.['주력/종합게임']||'').toLowerCase();return keywords.some(keyword=>category.includes(keyword.toLowerCase()))?1:.35;}
 /** 성향 점수가 비슷할 때 1단계 관계를 강하게, 2단계 관계를 약하게 우선합니다. */
-function relationshipRankScore(score,relation){return score+(relation?.closeness||0)*(RELATION_BONUS_BY_DEPTH[relation?.depth]||0);}
+function relationshipRankScore(score,relation,multiplier=1){return score+(relation?.closeness||0)*(RELATION_BONUS_BY_DEPTH[relation?.depth]||0)*multiplier;}
 
-/** 취향·주력 게임·최애 관계도를 반영하고, 1위 주변의 2단계 관계 스트리머를 깊이별로 우선합니다. */
+/** 최애가 있으면 최애 관계를 BEST 관계보다 강하게 반영하고, 없으면 BEST 주변 관계를 우선합니다. */
 function recommendations(){
   const {vector,favoriteWeight,gameKeywords}=buildUserVector(), favorite=streamers.find(s=>nameOf(s)===state.favorite), favVector=favorite?streamerVector(favorite):null;
   let pool=candidates();if(!pool.length)pool=streamers.filter(s=>nameOf(s)!==state.favorite&&!isOfficial(s));if(!pool.length)pool=streamers.filter(s=>nameOf(s)!==state.favorite);
-  const fw=favVector?favoriteWeight:0,favoriteRelations=fw?relationshipNeighborhood(nameOf(favorite)):new Map();
-  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.88+game*.12,fav=favVector?similarity(favVector,streamerVector(s)):0;const score=taste*(1-fw)+fav*fw,relation=favoriteRelations.get(nameOf(s));return {s,score,rankScore:relationshipRankScore(score,relation),relationDepth:relation?.depth||null};}).sort((a,b)=>b.rankScore-a.rankScore);
+  const fw=favVector?favoriteWeight:0,favoriteRelations=favorite?relationshipNeighborhood(nameOf(favorite)):new Map();
+  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.88+game*.12,fav=favVector?similarity(favVector,streamerVector(s)):0;const score=taste*(1-fw)+fav*fw,relation=favoriteRelations.get(nameOf(s));return {s,score,rankScore:relationshipRankScore(score,relation,FAVORITE_RELATION_MULTIPLIER),relationDepth:relation?.depth||null};}).sort((a,b)=>b.rankScore-a.rankScore);
   if(!scored.length)return [];const winner=scored[0],winnerRelations=relationshipNeighborhood(nameOf(winner.s));
   const next=scored.slice(1).map(item=>{const relation=winnerRelations.get(nameOf(item.s));return {...item,winnerRelationDepth:relation?.depth||null,nextScore:relationshipRankScore(item.rankScore,relation)};}).sort((a,b)=>b.nextScore-a.nextScore);
   return [winner,...next.slice(0,4)];

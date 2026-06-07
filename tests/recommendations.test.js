@@ -66,6 +66,17 @@ assert.ok(
   'a similar depth-one candidate should outrank a slightly stronger depth-two candidate',
 );
 assert.equal(vm.runInContext("relationshipRankScore(.8, { depth: 3, closeness: 1 })", context), .8, 'depth-three relationships must add no ranking bonus');
+assert.ok(
+  vm.runInContext("relationshipRankScore(.8, { depth: 1, closeness: .6 }, FAVORITE_RELATION_MULTIPLIER) > relationshipRankScore(.8, { depth: 1, closeness: .99 })", context),
+  'a direct favorite relationship should outrank a direct BEST relationship',
+);
+
+const favoritePriorityResults = vm.runInContext(`
+  relationshipGraph = buildRelationshipGraph(streamers);
+  state = { scene: 'result', includeVtuber: true, favorite: '한동숙', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 2] };
+  recommendations();
+`, context);
+assert.ok(favoritePriorityResults.some(item => item.relationDepth === 1), 'favorite relationships should be considered even when favoriteWeight is zero');
 
 const filteredResults = vm.runInContext(`
   relationshipGraph = buildRelationshipGraph(streamers);
