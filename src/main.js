@@ -25,7 +25,9 @@ const QUESTIONS = [
   {q:'방송을 켜놓는 방식은?', a:[['본방은 무조건 집중해서 본다',{skill:4,chat:3}],['게임하면서 옆에 오래 틀어둔다',{energy:1.5,chat:2}],['자기 전 새벽에 정주행',{latenight:5,energy:1}],['클립 보고 본방까지 따라간다',{energy:4,chat:4}]]},
   {q:'오래 보게 되는 콘텐츠 스타일은?', a:[['한 게임을 깊게 파는 장인 방송',{skill:5,energy:2}],['매일 새로운 걸 만나는 종합 게임',{energy:4,otaku:3}],['사람들과 만드는 대형 합방·서버',{collab:5,chat:4}],['게임보다 토크와 소통이 중심',{chat:5,spicy:3}]]},
   {q:'추천 스트리머의 주력 콘텐츠는?', a:[['상관없음',{gameKeywords:[]}],['종합 게임 · 스토리',{gameKeywords:['종합 게임','종겜','스토리','콘솔','인디']}],['LoL · TFT · AOS',{gameKeywords:['lol','tft','리그 오브 레전드','aos']}],['마크 · 대형 서버',{gameKeywords:['마인크래프트','마크','서버']}],['FPS · 오버워치 · 발로',{gameKeywords:['fps','오버워치','발로란트','배틀그라운드']}],['서브컬처 · 버튜버',{gameKeywords:['서브컬처','버튜버','오타쿠']}],['스포츠 · 격투 · 레이싱',{gameKeywords:['스포츠','축구','야구','격투','레이싱']}],['라디오 · 토크 · 힐링',{gameKeywords:['라디오','토크','소통','힐링']}],['대회 · e스포츠 · 분석',{gameKeywords:['대회','e스포츠','이스포츠','분석','해설']}]]},
-  {q:'추천 결과를 어떻게 구성할까요?', a:[['가장 정확한 BEST 중심',{favoriteWeight:.3,relationWeight:.12,exploreWeight:.05,longtailWeight:.02}],['최애 관계를 우선해서',{favoriteWeight:.45,relationWeight:.45,exploreWeight:.08,longtailWeight:.03}],['취향 맞는 덜 뻔한 사람',{favoriteWeight:.18,relationWeight:.12,exploreWeight:.45,longtailWeight:.2}],['숨은 보석까지 섞어서',{favoriteWeight:.12,relationWeight:.08,exploreWeight:.55,longtailWeight:.5}]]}
+  {q:'추천 결과를 어떻게 구성할까요?', a:[['가장 정확한 BEST 중심',{favoriteWeight:.3,relationWeight:.12,exploreWeight:.05,longtailWeight:.02}],['최애 관계를 우선해서',{favoriteWeight:.45,relationWeight:.45,exploreWeight:.08,longtailWeight:.03}],['취향 맞는 덜 뻔한 사람',{favoriteWeight:.18,relationWeight:.12,exploreWeight:.45,longtailWeight:.2}],['숨은 보석까지 섞어서',{favoriteWeight:.12,relationWeight:.08,exploreWeight:.55,longtailWeight:.5}]]},
+  {q:'게임 장르 외에 끌리는 방송 스타일은?', a:[['상관없음',{preferenceKeywords:[]}],['토크 · 라디오 · 힐링',{preferenceKeywords:['토크','talk','라디오','radio','힐링','calm']}],['합방 · 크루 · 대형 서버',{preferenceKeywords:['합방','collab','크루','대형서버']}],['실력 · 분석 · e스포츠',{preferenceKeywords:['실력','skill','분석','e스포츠','esports']}],['매운맛 · 하이텐션',{preferenceKeywords:['매운맛','spicy','하이텐션','high_energy']}],['음악 · 노래 방송',{preferenceKeywords:['음악','노래']}]]},
+  {q:'새 최애를 찾을 때 가장 기대하는 매력은?', a:[['상관없음',{preferenceKeywords:[]}],['검증된 대표 방송',{preferenceKeywords:['best_match','major']}],['아직 덜 알려진 숨은 보석',{preferenceKeywords:['hidden_gem','longtail']}],['세계관과 덕질할 거리',{preferenceKeywords:['otaku','서브컬처','버튜버']}],['스토리에 몰입하는 방송',{preferenceKeywords:['story','스토리게임']}],['한 게임을 깊게 파는 장인',{preferenceKeywords:['skill','실력','분석']}]]},
 ];
 
 const CHAT_POOL = [
@@ -125,7 +127,7 @@ function render(){({start:renderStart,favorite:renderFavorite,quiz:renderQuiz,re
 /** 첫 화면과 버튜버 포함 필터를 렌더링합니다. */
 function renderStart(){
   setScene('성향 분석 대기실');
-  app.innerHTML=`<section class="screen"><div class="eyebrow">Find your next streamer</div><h1 class="hero-title">인터넷방송<br><em>성향 테스트</em></h1><p class="subtitle">당신의 방송 취향을 분석해서 찰떡 스트리머를 추천합니다.<br>12개의 질문, 약 1분이면 충분해요.</p><div class="choice-label">추천 결과에 버튜버를 포함할까요?</div><div class="mode-options"><label class="mode-option"><input type="radio" name="vtuber" value="yes" ${state.includeVtuber?'checked':''}><span class="mode-card">버튜버 포함<small>캠방 · 듀라한 · 버튜버 모두 추천</small></span></label><label class="mode-option"><input type="radio" name="vtuber" value="no" ${!state.includeVtuber?'checked':''}><span class="mode-card">버튜버 제외<small>${INCLUDE_DULLAHAN_WHEN_EXCLUDING_VTUBERS?'캠방 · 듀라한 추천':'캠방만 추천'}</small></span></label></div><div class="action-row"><button class="primary-btn" id="start-btn">취향 분석 시작하기 →</button><span class="microcopy">현재 ${streamers.length}명의 방송 데이터 분석 준비 완료</span></div><div class="donation"><strong>₩ 10,000 취향저격님</strong><p>제 다음 최애를 찾아주세요!<br>매운맛에 새벽방송 좋아합니다</p></div></section>`;
+  app.innerHTML=`<section class="screen"><div class="eyebrow">Find your next streamer</div><h1 class="hero-title">인터넷방송<br><em>성향 테스트</em></h1><p class="subtitle">당신의 방송 취향을 분석해서 찰떡 스트리머를 추천합니다.<br>14개의 질문, 약 1분이면 충분해요.</p><div class="choice-label">추천 결과에 버튜버를 포함할까요?</div><div class="mode-options"><label class="mode-option"><input type="radio" name="vtuber" value="yes" ${state.includeVtuber?'checked':''}><span class="mode-card">버튜버 포함<small>캠방 · 듀라한 · 버튜버 모두 추천</small></span></label><label class="mode-option"><input type="radio" name="vtuber" value="no" ${!state.includeVtuber?'checked':''}><span class="mode-card">버튜버 제외<small>${INCLUDE_DULLAHAN_WHEN_EXCLUDING_VTUBERS?'캠방 · 듀라한 추천':'캠방만 추천'}</small></span></label></div><div class="action-row"><button class="primary-btn" id="start-btn">취향 분석 시작하기 →</button><span class="microcopy">현재 ${streamers.length}명의 방송 데이터 분석 준비 완료</span></div><div class="donation"><strong>₩ 10,000 취향저격님</strong><p>제 다음 최애를 찾아주세요!<br>매운맛에 새벽방송 좋아합니다</p></div></section>`;
   document.querySelectorAll('[name=vtuber]').forEach(el=>el.addEventListener('change',()=>{state.includeVtuber=el.value==='yes';saveState();}));
   document.querySelector('#start-btn').addEventListener('click',()=>{state.scene='favorite';saveState();render();announce('취향 분석을 시작합니다!');});
 }
@@ -162,9 +164,9 @@ function renderQuiz(){
 
 /** 답변들을 축별 평균 0~5 벡터로 변환합니다. */
 function buildUserVector(){
-  const totals=Object.fromEntries(AXES.map(k=>[k,0])), counts=Object.fromEntries(AXES.map(k=>[k,0])), weights={...DEFAULT_RECOMMENDATION_WEIGHTS};let gameKeywords=[];
-  state.answers.forEach((answer,i)=>{const vector=QUESTIONS[i]?.a?.[answer]?.[1]||{};AXES.forEach(k=>{if(Number.isFinite(vector[k])){totals[k]+=vector[k];counts[k]++;}});Object.keys(weights).forEach(k=>{if(Number.isFinite(vector[k]))weights[k]=vector[k];});if(Array.isArray(vector.gameKeywords))gameKeywords=vector.gameKeywords;});
-  return {vector:Object.fromEntries(AXES.map(k=>[k,counts[k]?totals[k]/counts[k]:2.5])),gameKeywords,...weights};
+  const totals=Object.fromEntries(AXES.map(k=>[k,0])), counts=Object.fromEntries(AXES.map(k=>[k,0])), weights={...DEFAULT_RECOMMENDATION_WEIGHTS};let gameKeywords=[],preferenceKeywords=[];
+  state.answers.forEach((answer,i)=>{const vector=QUESTIONS[i]?.a?.[answer]?.[1]||{};AXES.forEach(k=>{if(Number.isFinite(vector[k])){totals[k]+=vector[k];counts[k]++;}});Object.keys(weights).forEach(k=>{if(Number.isFinite(vector[k]))weights[k]=vector[k];});if(Array.isArray(vector.gameKeywords))gameKeywords=vector.gameKeywords;if(Array.isArray(vector.preferenceKeywords))preferenceKeywords.push(...vector.preferenceKeywords);});
+  return {vector:Object.fromEntries(AXES.map(k=>[k,counts[k]?totals[k]/counts[k]:2.5])),gameKeywords,preferenceKeywords:[...new Set(preferenceKeywords)],...weights};
 }
 /** 데이터의 시간대 비율(0~1)과 일반 지표(0~5)를 동일 범위로 정규화합니다. */
 function streamerVector(s){
@@ -197,6 +199,8 @@ function relationshipNeighborhood(source,maxDepth=RELATION_MAX_DEPTH){
 }
 function textTags(s){return [s?.['주력/종합게임'],...stringList(s?.콘텐츠태그),...stringList(s?.content_tags)].map(value=>String(value||'').toLowerCase());}
 function gamePreferenceScore(s,keywords){if(!keywords.length)return null;const tags=textTags(s);return keywords.some(keyword=>tags.some(tag=>tag.includes(keyword.toLowerCase())))?1:.35;}
+function preferenceScore(s,keywords){if(!keywords.length)return null;const values=[...textTags(s),...stringList(s?.추천풀),...stringList(s?.recommendation_pool),s?.규모티어,s?.scale_tier].map(value=>String(value||'').toLowerCase());return keywords.some(keyword=>values.some(value=>value.includes(String(keyword).toLowerCase())))?1:.2;}
+function blendedTasteScore(test,game,preference){const parts=[[test,.7],[game,.12],[preference,.18]].filter(([value])=>value!==null);const total=parts.reduce((sum,[,weight])=>sum+weight,0);return parts.reduce((sum,[value,weight])=>sum+value*weight,0)/total;}
 function recommendationPoolBonus(s,purpose){const pools=Array.isArray(s?.추천풀)?s.추천풀.map(value=>String(value).toLowerCase()):[];return pools.some(value=>value.includes(purpose)||value.includes(purpose==='discovery'?'발굴':'콘텐츠')) ? .06 : 0;}
 function similarTagRelation(anchor,candidate){
   if(!anchor)return 0;const target=nameOf(candidate),source=nameOf(anchor),edges=[...(Array.isArray(anchor.유사태그관계)?anchor.유사태그관계:[]),...(Array.isArray(candidate.유사태그관계)?candidate.유사태그관계:[])];
@@ -215,10 +219,10 @@ function discoveryPick(scored,selected,bestScore,{exploreWeight,longtailWeight})
 
 /** BEST는 정확도를 유지하고 NEXT PICK은 관계·콘텐츠·취향·발굴 슬롯으로 분리합니다. */
 function recommendations(){
-  const profile=buildUserVector(),{vector,favoriteWeight,gameKeywords,relationWeight,exploreWeight,longtailWeight}=profile,favorite=streamers.find(s=>nameOf(s)===state.favorite),favVector=favorite?streamerVector(favorite):null;
+  const profile=buildUserVector(),{vector,favoriteWeight,gameKeywords,preferenceKeywords,relationWeight,exploreWeight,longtailWeight}=profile,favorite=streamers.find(s=>nameOf(s)===state.favorite),favVector=favorite?streamerVector(favorite):null;
   const pool=candidates();if(!pool.length)return [];
   const fw=favVector?favoriteWeight:0,favoriteRelations=favorite?relationshipNeighborhood(nameOf(favorite)):new Map();
-  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),taste=game===null?test:test*.86+game*.14,fav=favVector?similarity(favVector,streamerVector(s)):0,relation=favoriteRelations.get(nameOf(s));const score=taste*(1-fw)+fav*fw;return {s,score,testScore:test,gameScore:game,rankScore:relationshipRankScore(score,relation,FAVORITE_RELATION_MULTIPLIER),relationDepth:relation?.depth||null};}).sort((a,b)=>b.score-a.score||nameOf(a.s).localeCompare(nameOf(b.s)));
+  const scored=pool.map(s=>{const test=similarity(vector,streamerVector(s)),game=gamePreferenceScore(s,gameKeywords),preference=preferenceScore(s,preferenceKeywords),taste=blendedTasteScore(test,game,preference),fav=favVector?similarity(favVector,streamerVector(s)):0,relation=favoriteRelations.get(nameOf(s));const score=taste*(1-fw)+fav*fw;return {s,score,testScore:test,gameScore:game,preferenceScore:preference,rankScore:relationshipRankScore(score,relation,FAVORITE_RELATION_MULTIPLIER),relationDepth:relation?.depth||null};}).sort((a,b)=>b.score-a.score||nameOf(a.s).localeCompare(nameOf(b.s)));
   if(!scored.length)return [];const winner={...scored[0],slotRole:'best'},winnerRelations=relationshipNeighborhood(nameOf(winner.s)),selected=new Set([nameOf(winner.s)]),next=[];
   const enriched=scored.slice(1).map(item=>{const relation=winnerRelations.get(nameOf(item.s)),activeRelation=favoriteRelations.size?favoriteRelations.get(nameOf(item.s)):relation,tagBonus=similarTagRelation(favorite||winner.s,item.s)*SIMILAR_TAG_RELATION_BONUS;return {...item,winnerRelationDepth:relation?.depth||null,nextScore:relationshipRankScore(item.score,activeRelation,1+relationWeight)+tagBonus};});
   const relationPick=firstUnused([...enriched].sort((a,b)=>b.nextScore-a.nextScore),selected);if(relationPick){next.push({...relationPick,slotRole:'relation'});selected.add(nameOf(relationPick.s));}
