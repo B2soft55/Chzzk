@@ -48,6 +48,7 @@ assert.equal(results.length, 5);
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
 assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2), 'next picks must not use relationships beyond depth two');
 assert.ok(results.slice(1).filter(item => item.winnerRelationDepth === 1).length >= 3, 'similar next picks should usually come from direct relationships');
+assert.ok(results.slice(1).some(item => item.nextScore > item.rankScore), 'BEST relationship bonuses should still apply when no favorite is selected');
 
 const neighborhood = vm.runInContext("relationshipNeighborhood('한동숙', 3)", context);
 assert.ok(neighborhood.size > 0);
@@ -73,10 +74,13 @@ assert.ok(
 
 const favoritePriorityResults = vm.runInContext(`
   relationshipGraph = buildRelationshipGraph(streamers);
-  state = { scene: 'result', includeVtuber: true, favorite: '한동숙', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 2] };
+  state = { scene: 'result', includeVtuber: true, favorite: '한동숙', answers: [0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 0] };
   recommendations();
 `, context);
-assert.ok(favoritePriorityResults.some(item => item.relationDepth === 1), 'favorite relationships should be considered even when favoriteWeight is zero');
+assert.ok(favoritePriorityResults.slice(1).every(item => item.relationDepth === 1), 'next picks should prioritize direct favorite relationships when a favorite is selected');
+assert.ok(favoritePriorityResults.slice(1).every(item => item.nextScore === item.rankScore), 'BEST relationship bonuses must not reorder next picks when a favorite is selected');
+context.favoritePriorityItem = favoritePriorityResults[1];
+assert.match(vm.runInContext("resultCard(favoritePriorityItem, 0)", context), /최애와 관계 1단계/, 'result cards should explain favorite relationship priority');
 
 const filteredResults = vm.runInContext(`
   relationshipGraph = buildRelationshipGraph(streamers);
