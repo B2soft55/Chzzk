@@ -34,6 +34,9 @@ assert.ok(Object.values(vector).every(Number.isFinite), 'every vector value shou
 
 assert.equal(vm.runInContext('QUESTIONS.length', context), 12, 'quiz should contain 12 questions');
 assert.equal(vm.runInContext("QUESTIONS[10].a[0][0]", context), '상관없음', 'main-game question should start with no preference');
+assert.equal(vm.runInContext("typeof capturedResultBlob", context), 'function', 'full result capture should be available');
+assert.equal(vm.runInContext("typeof fallbackResultCanvas", context), 'function', 'canvas fallback should be available for incompatible browsers');
+assert.equal(vm.runInContext("typeof downloadImage", context), 'function', 'generated image should have a dedicated download helper');
 
 const results = vm.runInContext(`
   streamers = __streamers;

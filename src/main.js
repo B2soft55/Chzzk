@@ -179,19 +179,32 @@ function resultCard(item,i){const s=item.s,pct=Math.round(item.score*100),relati
 
 /** 계산된 스타일을 복제해 외부 라이브러리 없이 결과 영역을 PNG로 저장합니다. */
 function inlineComputedStyles(source,clone){
-  const style=getComputedStyle(source);for(const property of style)clone.style.setProperty(property,style.getPropertyValue(property),style.getPropertyPriority(property));
+  const style=getComputedStyle(source);for(const property of style)clone.style.setProperty(property,style.getPropertyValue(property),style.getPropertyPriority(property));clone.style.animation='none';clone.style.transition='none';
   Array.from(source.children).forEach((child,i)=>inlineComputedStyles(child,clone.children[i]));
 }
+function canvasBlob(canvas){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('PNG 변환 실패')),'image/png'));}
+function downloadImage(blob){
+  const url=URL.createObjectURL(blob),download=document.createElement('a');download.href=url;download.download=`stream-match-${Date.now()}.png`;download.style.display='none';document.body.append(download);download.click();download.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+function wrapCanvasText(context,text,x,y,maxWidth,lineHeight,maxLines=3){
+  const chars=Array.from(String(text||''));let line='',lines=[];chars.forEach(char=>{const next=line+char;if(line&&context.measureText(next).width>maxWidth){lines.push(line);line=char;}else line=next;});if(line)lines.push(line);lines.slice(0,maxLines).forEach((value,i)=>context.fillText(value+(i===maxLines-1&&lines.length>maxLines?'…':''),x,y+i*lineHeight));return Math.min(lines.length,maxLines)*lineHeight;
+}
+/** foreignObject를 지원하지 않는 모바일 브라우저에서도 저장할 수 있는 순수 Canvas 결과 이미지입니다. */
+function fallbackResultCanvas(source){
+  const canvas=document.createElement('canvas'),width=1080,pad=72,cards=Array.from(source.querySelectorAll('.recommend-card'));canvas.width=width;canvas.height=1120+cards.length*155;const context=canvas.getContext('2d');if(!context)throw new Error('Canvas를 사용할 수 없음');
+  context.fillStyle='#090d0c';context.fillRect(0,0,canvas.width,canvas.height);context.fillStyle='#00ffa3';context.fillRect(0,0,canvas.width,12);context.font='800 24px system-ui, sans-serif';context.fillText('STREAM MATCH · YOUR STREAMING TASTE',pad,82);
+  context.fillStyle='#fff';context.font='900 58px system-ui, sans-serif';wrapCanvasText(context,source.querySelector('.result-type')?.textContent,pad,170,width-pad*2,68,2);context.fillStyle='#9baba3';context.font='24px system-ui, sans-serif';context.fillText('당신의 취향과 가장 가까운 방송을 찾았습니다.',pad,300);
+  context.fillStyle='#121a17';context.fillRect(pad,355,width-pad*2,430);context.fillStyle='#00ffa3';context.font='800 22px system-ui, sans-serif';context.fillText('BEST MATCH',pad+42,410);context.fillStyle='#fff';context.font='900 72px system-ui, sans-serif';context.fillText(source.querySelector('.winner-name')?.textContent||'',pad+42,500);context.fillStyle='#ff3d75';context.font='900 54px system-ui, sans-serif';context.fillText(source.querySelector('.score-ring span')?.textContent||'',width-pad-210,500);context.fillStyle='#d7e1dc';context.font='25px system-ui, sans-serif';wrapCanvasText(context,source.querySelector('.winner-feature')?.textContent,pad+42,580,width-pad*2-84,38,3);context.fillStyle='#9baba3';context.font='22px system-ui, sans-serif';wrapCanvasText(context,source.querySelector('.reason')?.textContent,pad+42,690,width-pad*2-84,34,3);
+  context.fillStyle='#fff';context.font='800 30px system-ui, sans-serif';context.fillText('NEXT PICKS',pad,865);cards.forEach((card,i)=>{const y=910+i*155;context.fillStyle='#121a17';context.fillRect(pad,y,width-pad*2,125);context.fillStyle='#00ffa3';context.font='800 18px system-ui, sans-serif';context.fillText(`0${i+2}`,pad+28,y+42);context.fillStyle='#fff';context.font='800 30px system-ui, sans-serif';context.fillText(card.querySelector('.recommend-name')?.textContent||'',pad+85,y+46);context.fillStyle='#9baba3';context.font='18px system-ui, sans-serif';wrapCanvasText(context,card.querySelector('.recommend-feature')?.textContent,pad+85,y+82,width-pad*2-210,25,2);context.fillStyle='#ff3d75';context.font='800 20px system-ui, sans-serif';context.fillText(card.querySelector('.match-percent')?.textContent||'',width-pad-170,y+45);});return canvas;
+}
+async function capturedResultBlob(source){
+  const width=Math.ceil(source.scrollWidth),height=Math.ceil(source.scrollHeight),clone=source.cloneNode(true);inlineComputedStyles(source,clone);clone.querySelectorAll('[data-capture-exclude]').forEach(el=>el.remove());clone.setAttribute('xmlns','http://www.w3.org/1999/xhtml');clone.style.width=`${width}px`;clone.style.height=`${height}px`;clone.style.overflow='visible';
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%">${new XMLSerializer().serializeToString(clone)}</foreignObject></svg>`,image=new Image(),url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}));
+  try{await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('결과 화면 변환 실패'));image.src=url;});const scale=Math.min(2,12000/Math.max(width,height)),canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const context=canvas.getContext('2d');if(!context)throw new Error('Canvas를 사용할 수 없음');context.scale(scale,scale);context.drawImage(image,0,0);return await canvasBlob(canvas);}finally{URL.revokeObjectURL(url);}
+}
 async function saveResultImage(){
-  const source=document.querySelector('.result-screen');if(!source)return;
-  const button=document.querySelector('#save-image');button.disabled=true;button.textContent='이미지 만드는 중…';
-  try{
-    const width=Math.ceil(source.scrollWidth),height=Math.ceil(source.scrollHeight),clone=source.cloneNode(true);inlineComputedStyles(source,clone);clone.querySelectorAll('[data-capture-exclude]').forEach(el=>el.remove());clone.setAttribute('xmlns','http://www.w3.org/1999/xhtml');clone.style.width=`${width}px`;clone.style.height=`${height}px`;clone.style.overflow='visible';
-    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%">${new XMLSerializer().serializeToString(clone)}</foreignObject></svg>`;
-    const image=new Image(),url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}));await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=url;});
-    const scale=Math.min(2,12000/Math.max(width,height)),canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const context=canvas.getContext('2d');context.scale(scale,scale);context.drawImage(image,0,0);URL.revokeObjectURL(url);
-    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw new Error('PNG 변환 실패');const download=document.createElement('a');download.href=URL.createObjectURL(blob);download.download=`stream-match-${Date.now()}.png`;download.click();setTimeout(()=>URL.revokeObjectURL(download.href),1000);announce('결과 이미지를 저장했어요.');
-  }catch(error){console.warn('Result capture failed:',error);announce('이미지를 저장하지 못했어요. 브라우저를 확인해주세요.');}finally{button.disabled=false;button.textContent='결과 이미지 저장';}
+  const source=document.querySelector('.result-screen');if(!source)return;const button=document.querySelector('#save-image');button.disabled=true;button.textContent='이미지 만드는 중…';
+  try{let blob;try{blob=await capturedResultBlob(source);}catch(error){console.warn('Full result capture failed; using compatible canvas image:',error);blob=await canvasBlob(fallbackResultCanvas(source));}downloadImage(blob);announce('결과 이미지를 저장했어요.');}catch(error){console.warn('Result image save failed:',error);announce('이미지를 저장하지 못했어요. 잠시 후 다시 시도해주세요.');}finally{button.disabled=false;button.textContent='결과 이미지 저장';}
 }
 
 /** 최종 추천 1명과 추가 추천, 취향 차트를 렌더링합니다. */
