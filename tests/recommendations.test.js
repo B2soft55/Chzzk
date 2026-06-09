@@ -70,12 +70,22 @@ assert.equal(vm.runInContext("typeof fallbackResultCanvas", context), 'function'
 assert.equal(vm.runInContext("typeof downloadImage", context), 'function');
 
 const results = runRecommendations(baseAnswers);
-assert.equal(results.length, 5, 'a sufficiently large pool should return five recommendations');
-assert.ok(results.length <= 5, 'recommendations should never exceed five');
-assert.equal(results.map(item => item.slotRole).join(','), 'best,relation,content,taste,discovery', 'five slots should have distinct roles');
+assert.equal(results.length, 7, 'a sufficiently large pool should return three TOP picks and four additional recommendations');
+assert.ok(results.length <= 7, 'recommendations should never exceed seven');
+assert.equal(results.map(item => item.slotRole).join(','), 'best,best,best,relation,content,taste,discovery', 'results should contain three TOP picks and four distinct additional roles');
+assert.equal(new Set(results.slice(0, 3).map(item => item.s.정제된이름)).size, 3, 'TOP 3 recommendations should be distinct');
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
+assert.ok(results.every(item => Number.isFinite(item.finalScore) && Number.isFinite(item.relationBonus) && Number.isFinite(item.diversityBonus)), 'recommendations should expose finite BEST scoring diagnostics');
 assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2));
-assert.match(vm.runInContext('resultCard(recommendations()[4], 3)', context), /DISCOVERY/, 'result card should identify the discovery slot');
+assert.match(vm.runInContext('resultCard(recommendations()[3], 0)', context), /최애와 관련이 있는/, 'relation card should use the requested result label');
+assert.match(vm.runInContext('resultCard(recommendations()[4], 1)', context), /컨텐츠가 비슷한/, 'content card should use the requested result label');
+assert.match(vm.runInContext('resultCard(recommendations()[5], 2)', context), /입맛이 비슷한/, 'taste card should use the requested result label');
+assert.match(vm.runInContext('resultCard(recommendations()[6], 3)', context), /이런 스트리머는 어떤가요\?/, 'discovery card should use the requested result label');
+assert.doesNotMatch(vm.runInContext('resultCard(recommendations()[3], 0)', context), /recommend-feature/, 'additional recommendation cards should omit streamer descriptions');
+assert.doesNotMatch(vm.runInContext('topPickCard(recommendations()[0], 0)', context), /winner-feature|reason/, 'TOP recommendation cards should omit streamer descriptions');
+const renderedResult = vm.runInContext("renderResult(); app.innerHTML", context);
+assert.equal((renderedResult.match(/class=\"top-pick-card\"/g) || []).length, 3, 'result screen should render three TOP recommendation cards');
+assert.doesNotMatch(renderedResult, /radar-card|class=\"radar\"/, 'result screen should not render the hexagonal taste graph');
 
 const neighborhood = vm.runInContext("relationshipNeighborhood('한동숙', 3)", context);
 assert.ok(neighborhood.size > 0);
@@ -93,8 +103,46 @@ assert.ok(vm.runInContext("isOfficial({ 정제된이름: '개인방송', 공식�
 
 const sameResults = runRecommendations(baseAnswers).map(item => item.s.정제된이름);
 assert.deepEqual(runRecommendations(baseAnswers).map(item => item.s.정제된이름), sameResults, 'the same state should be reproducible');
+
+context.bestPoolFixture = Array.from({ length: 7 }, (_, index) => ({ 정제된이름: `동점 후보 ${index + 1}`, 버튜버여부: '캠방', 연결관계: [], 추천풀: [] }));
+const cappedPoolWinner = vm.runInContext(`
+  streamers = bestPoolFixture;
+  relationshipGraph = buildRelationshipGraph(streamers);
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0] };
+  recommendations()[0].s.정제된이름;
+`, context);
+context.cappedPoolWinner = cappedPoolWinner;
+assert.ok(vm.runInContext("bestPoolFixture.map(nameOf).sort((a,b)=>a.localeCompare(b)).slice(0,5).includes(cappedPoolWinner)", context), 'BEST rotation should be capped to the top five tied candidates');
+assert.equal(vm.runInContext("state={answers:[0],favorite:'',includeVtuber:true}; bestPoolFixture.map(nameOf).sort((a,b)=>a.localeCompare(b))[stableHash(answerSignature())%5]", context), cappedPoolWinner, 'BEST rotation should use the stable answer hash');
+
+const thresholdWinner = vm.runInContext(`
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0] };
+  const target = buildUserVector().vector;
+  streamers = [{ 정제된이름: '근접 1위', 버튜버여부: '캠방', 연결관계: [], ...Object.fromEntries(AXES.map(key => [FIELD_MAP[key], target[key]])) }, ...Array.from({ length: 6 }, (_, index) => ({ 정제된이름: '낮은 후보 '+index, 버튜버여부: '캠방', 연결관계: [], ...Object.fromEntries(AXES.map(key => [FIELD_MAP[key], 0])) }))];
+  relationshipGraph = buildRelationshipGraph(streamers);
+  recommendations()[0].s.정제된이름;
+`, context);
+assert.equal(thresholdWinner, '근접 1위', 'candidates outside the finalScore threshold must not rotate into BEST');
+
+context.diversityFixture = [
+  { 정제된이름: '수련수련', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'mid', 추천풀: ['best_match', 'talk'] },
+  { 정제된이름: '영듀', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'mid', 추천풀: ['best_match', 'talk'] },
+  { 정제된이름: '핑크자크', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'longtail', 추천풀: ['hidden_gem', 'talk'] },
+  { 정제된이름: '찡스임', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'longtail', 추천풀: ['hidden_gem', 'talk'] },
+  { 정제된이름: '롱테일 hidden_gem', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'longtail', 추천풀: ['hidden_gem'] },
+];
+const diversityResults = vm.runInContext(`
+  streamers = diversityFixture;
+  relationshipGraph = buildRelationshipGraph(streamers);
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0,0,0,0,0,0,0,0,0,0,0,0,2,3] };
+  recommendations();
+`, context);
+context.diversityResults = diversityResults;
+assert.ok(vm.runInContext("['핑크자크','찡스임','롱테일 hidden_gem'].every(name => diversityResults.find(item => item.s.정제된이름 === name).diversityBonus > diversityResults.find(item => item.s.정제된이름 === '수련수련').diversityBonus)", context), 'longtail hidden-gem talk cases should receive more BEST diversity support than equivalent mid best-match talk cases');
+assert.ok(diversityResults.every(item => item.diversityBonus < .01), 'BEST diversity bonus should remain small');
+
 const alternateResults = runRecommendations([1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 8, 0, 0, 3]);
-assert.notEqual(alternateResults[4].s.정제된이름, results[4].s.정제된이름, 'a different answer signature can rotate the discovery slot');
+assert.notEqual(alternateResults[6].s.정제된이름, results[6].s.정제된이름, 'a different answer signature can rotate the discovery slot');
 
 const talkStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 1, 2, 3]);
 const skillStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3, 5, 3]);
