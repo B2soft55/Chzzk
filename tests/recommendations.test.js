@@ -74,6 +74,7 @@ assert.equal(results.length, 5, 'a sufficiently large pool should return five re
 assert.ok(results.length <= 5, 'recommendations should never exceed five');
 assert.equal(results.map(item => item.slotRole).join(','), 'best,relation,content,taste,discovery', 'five slots should have distinct roles');
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
+assert.ok(results.every(item => Number.isFinite(item.finalScore) && Number.isFinite(item.relationBonus) && Number.isFinite(item.diversityBonus)), 'recommendations should expose finite BEST scoring diagnostics');
 assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2));
 assert.match(vm.runInContext('resultCard(recommendations()[4], 3)', context), /DISCOVERY/, 'result card should identify the discovery slot');
 
@@ -93,6 +94,44 @@ assert.ok(vm.runInContext("isOfficial({ 정제된이름: '개인방송', 공식�
 
 const sameResults = runRecommendations(baseAnswers).map(item => item.s.정제된이름);
 assert.deepEqual(runRecommendations(baseAnswers).map(item => item.s.정제된이름), sameResults, 'the same state should be reproducible');
+
+context.bestPoolFixture = Array.from({ length: 7 }, (_, index) => ({ 정제된이름: `동점 후보 ${index + 1}`, 버튜버여부: '캠방', 연결관계: [], 추천풀: [] }));
+const cappedPoolWinner = vm.runInContext(`
+  streamers = bestPoolFixture;
+  relationshipGraph = buildRelationshipGraph(streamers);
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0] };
+  recommendations()[0].s.정제된이름;
+`, context);
+context.cappedPoolWinner = cappedPoolWinner;
+assert.ok(vm.runInContext("bestPoolFixture.map(nameOf).sort((a,b)=>a.localeCompare(b)).slice(0,5).includes(cappedPoolWinner)", context), 'BEST rotation should be capped to the top five tied candidates');
+assert.equal(vm.runInContext("state={answers:[0],favorite:'',includeVtuber:true}; bestPoolFixture.map(nameOf).sort((a,b)=>a.localeCompare(b))[stableHash(answerSignature())%5]", context), cappedPoolWinner, 'BEST rotation should use the stable answer hash');
+
+const thresholdWinner = vm.runInContext(`
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0] };
+  const target = buildUserVector().vector;
+  streamers = [{ 정제된이름: '근접 1위', 버튜버여부: '캠방', 연결관계: [], ...Object.fromEntries(AXES.map(key => [FIELD_MAP[key], target[key]])) }, ...Array.from({ length: 6 }, (_, index) => ({ 정제된이름: '낮은 후보 '+index, 버튜버여부: '캠방', 연결관계: [], ...Object.fromEntries(AXES.map(key => [FIELD_MAP[key], 0])) }))];
+  relationshipGraph = buildRelationshipGraph(streamers);
+  recommendations()[0].s.정제된이름;
+`, context);
+assert.equal(thresholdWinner, '근접 1위', 'candidates outside the finalScore threshold must not rotate into BEST');
+
+context.diversityFixture = [
+  { 정제된이름: '수련수련', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'mid', 추천풀: ['best_match', 'talk'] },
+  { 정제된이름: '영듀', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'mid', 추천풀: ['best_match', 'talk'] },
+  { 정제된이름: '핑크자크', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'longtail', 추천풀: ['hidden_gem', 'talk'] },
+  { 정제된이름: '찡스임', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'longtail', 추천풀: ['hidden_gem', 'talk'] },
+  { 정제된이름: '롱테일 hidden_gem', 버튜버여부: '캠방', 연결관계: [], 규모티어: 'longtail', 추천풀: ['hidden_gem'] },
+];
+const diversityResults = vm.runInContext(`
+  streamers = diversityFixture;
+  relationshipGraph = buildRelationshipGraph(streamers);
+  state = { scene: 'result', includeVtuber: true, favorite: '', answers: [0,0,0,0,0,0,0,0,0,0,0,0,2,3] };
+  recommendations();
+`, context);
+context.diversityResults = diversityResults;
+assert.ok(vm.runInContext("['핑크자크','찡스임','롱테일 hidden_gem'].every(name => diversityResults.find(item => item.s.정제된이름 === name).diversityBonus > diversityResults.find(item => item.s.정제된이름 === '수련수련').diversityBonus)", context), 'longtail hidden-gem talk cases should receive more BEST diversity support than equivalent mid best-match talk cases');
+assert.ok(diversityResults.every(item => item.diversityBonus < .01), 'BEST diversity bonus should remain small');
+
 const alternateResults = runRecommendations([1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 8, 0, 0, 3]);
 assert.notEqual(alternateResults[4].s.정제된이름, results[4].s.정제된이름, 'a different answer signature can rotate the discovery slot');
 
