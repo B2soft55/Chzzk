@@ -70,13 +70,22 @@ assert.equal(vm.runInContext("typeof fallbackResultCanvas", context), 'function'
 assert.equal(vm.runInContext("typeof downloadImage", context), 'function');
 
 const results = runRecommendations(baseAnswers);
-assert.equal(results.length, 5, 'a sufficiently large pool should return five recommendations');
-assert.ok(results.length <= 5, 'recommendations should never exceed five');
-assert.equal(results.map(item => item.slotRole).join(','), 'best,relation,content,taste,discovery', 'five slots should have distinct roles');
+assert.equal(results.length, 7, 'a sufficiently large pool should return three TOP picks and four additional recommendations');
+assert.ok(results.length <= 7, 'recommendations should never exceed seven');
+assert.equal(results.map(item => item.slotRole).join(','), 'best,best,best,relation,content,taste,discovery', 'results should contain three TOP picks and four distinct additional roles');
+assert.equal(new Set(results.slice(0, 3).map(item => item.s.정제된이름)).size, 3, 'TOP 3 recommendations should be distinct');
 assert.ok(results.every(item => item.s && Number.isFinite(item.score)));
 assert.ok(results.every(item => Number.isFinite(item.finalScore) && Number.isFinite(item.relationBonus) && Number.isFinite(item.diversityBonus)), 'recommendations should expose finite BEST scoring diagnostics');
 assert.ok(results.slice(1).every(item => !item.winnerRelationDepth || item.winnerRelationDepth <= 2));
-assert.match(vm.runInContext('resultCard(recommendations()[4], 3)', context), /DISCOVERY/, 'result card should identify the discovery slot');
+assert.match(vm.runInContext('resultCard(recommendations()[3], 0)', context), /최애와 관련이 있는/, 'relation card should use the requested result label');
+assert.match(vm.runInContext('resultCard(recommendations()[4], 1)', context), /컨텐츠가 비슷한/, 'content card should use the requested result label');
+assert.match(vm.runInContext('resultCard(recommendations()[5], 2)', context), /입맛이 비슷한/, 'taste card should use the requested result label');
+assert.match(vm.runInContext('resultCard(recommendations()[6], 3)', context), /이런 스트리머는 어떤가요\?/, 'discovery card should use the requested result label');
+assert.doesNotMatch(vm.runInContext('resultCard(recommendations()[3], 0)', context), /recommend-feature/, 'additional recommendation cards should omit streamer descriptions');
+assert.doesNotMatch(vm.runInContext('topPickCard(recommendations()[0], 0)', context), /winner-feature|reason/, 'TOP recommendation cards should omit streamer descriptions');
+const renderedResult = vm.runInContext("renderResult(); app.innerHTML", context);
+assert.equal((renderedResult.match(/class=\"top-pick-card\"/g) || []).length, 3, 'result screen should render three TOP recommendation cards');
+assert.doesNotMatch(renderedResult, /radar-card|class=\"radar\"/, 'result screen should not render the hexagonal taste graph');
 
 const neighborhood = vm.runInContext("relationshipNeighborhood('한동숙', 3)", context);
 assert.ok(neighborhood.size > 0);
@@ -133,7 +142,7 @@ assert.ok(vm.runInContext("['핑크자크','찡스임','롱테일 hidden_gem'].e
 assert.ok(diversityResults.every(item => item.diversityBonus < .01), 'BEST diversity bonus should remain small');
 
 const alternateResults = runRecommendations([1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 8, 0, 0, 3]);
-assert.notEqual(alternateResults[4].s.정제된이름, results[4].s.정제된이름, 'a different answer signature can rotate the discovery slot');
+assert.notEqual(alternateResults[6].s.정제된이름, results[6].s.정제된이름, 'a different answer signature can rotate the discovery slot');
 
 const talkStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 1, 2, 3]);
 const skillStyleResults = runRecommendations([0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0, 3, 5, 3]);
